@@ -1,0 +1,38 @@
+<html>
+<head>
+    <style>
+        body, input {
+            background: black;
+            color: #ccc;
+            font-size: 18pt;
+        }
+
+        pre {
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+<form onsubmit="send(); return false;" autocomplete="off">
+    <input type="text" id="message" placeholder="enter message"/>
+    <input type="submit" value="Send"/>
+</form>
+<pre id="chat">
+</pre>
+<script>
+    var socket = new WebSocket('ws://127.0.0.1:8080');
+    var chat = document.getElementById('chat');
+    var message = document.getElementById('message');
+
+    socket.onmessage = function (e) {
+        chat.innerText = e.data + "\n" + chat.innerText;
+    };
+
+    function send() {
+        socket.send(message.value);
+        message.value = '';
+        return false;
+    }
+</script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+*.swp
+.idea/
+doc/
+tmp/
+vendor/
+test/server.sock
+test/server.tcp.port
+test/server.udp.port

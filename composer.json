@@ -1,0 +1,25 @@
+{
+  "name": "hfw/socket",
+  "type": "library",
+  "description": "Object-oriented BSD sockets and reactor.",
+  "keywords": [
+    "socket",
+    "reactor",
+    "websocket"
+  ],
+  "homepage": "https://github.com/hfw/socket",
+  "license": "MIT",
+  "require": {
+    "php": "~7.3",
+    "ext-sockets": "*",
+    "ext-mbstring": "*"
+  },
+  "autoload": {
+    "psr-4": {
+      "Helix\\Socket\\": "src/"
+    }
+  },
+  "require-dev": {
+    "ext-pcntl": "*"
+  }
+}
