@@ -122,7 +122,7 @@ class ChatHandler extends MessageHandler {
 $reactor = new Reactor();
 $server = ChatServer::create(AF_INET, $reactor)
     ->setOption(SO_REUSEADDR, 1)
-    ->bind(0, 44444)
+    ->bind('127.0.0.1', 44444)
     ->listen();
 
 echo "Listening on {$server}\n\n";

@@ -21,7 +21,7 @@
 </pre>
 <script>
     if (window.location.host) {
-        var socket = new WebSocket('wss://' + window.location.host + ':44444');
+        var socket = new WebSocket('wss://' + window.location.host);
     } else {
         var socket = new WebSocket('ws://127.0.0.1:44444');
     }
