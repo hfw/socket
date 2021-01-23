@@ -20,7 +20,11 @@
 <pre id="chat">
 </pre>
 <script>
-    var socket = new WebSocket('ws://127.0.0.1:8080');
+    if (window.location.host) {
+        var socket = new WebSocket('ws://' + window.location.host + ':44444');
+    } else {
+        var socket = new WebSocket('ws://127.0.0.1:44444');
+    }
     var chat = document.getElementById('chat');
     var message = document.getElementById('message');
 
