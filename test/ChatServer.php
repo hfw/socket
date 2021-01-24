@@ -9,7 +9,7 @@
 
 error_reporting(E_ALL);
 
-require_once '../vendor/autoload.php';
+require_once __DIR__ . '/../vendor/autoload.php';
 
 use Helix\Socket\Reactor;
 use Helix\Socket\WebSocket\Frame;

@@ -13,17 +13,18 @@
     </style>
 </head>
 <body>
-<form onsubmit="send(); return false;" autocomplete="off">
+<form onsubmit="return send();" autocomplete="off">
     <input type="text" id="message" placeholder="enter message"/>
     <input type="submit" value="Send"/>
 </form>
 <pre id="chat">
 </pre>
 <script>
+    var socket;
     if (window.location.host) {
-        var socket = new WebSocket('wss://' + window.location.host);
+        socket = new WebSocket('wss://' + window.location.host);
     } else {
-        var socket = new WebSocket('ws://127.0.0.1:44444');
+        socket = new WebSocket('ws://127.0.0.1:44444');
     }
     var chat = document.getElementById('chat');
     var message = document.getElementById('message');
