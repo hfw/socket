@@ -18,44 +18,6 @@ use Helix\Socket\WebSocket\MessageHandler;
 use Helix\Socket\WebSocket\WebSocketClient;
 use Helix\Socket\WebSocket\WebSocketServer;
 
-class ChatServer extends WebSocketServer {
-
-    public function accept () {
-        /** @var ChatClient $client */
-        $client = parent::accept();
-        echo "Connected: {$client}\n\n";
-        return $client;
-    }
-
-    public function broadcastUserList () {
-        $users = array_column($this->getClients(), 'nick');
-        $count = count($users);
-        sort($users);
-        $users = implode(', ', $users);
-        $this->broadcastText("[sys] Users ({$count}): {$users}");
-    }
-
-    public function close (int $code = Frame::CLOSE_INTERRUPT, $reason = '') {
-        echo "Shutting down!\n\n";
-        $this->broadcastText('[sys] Shutting down!');
-        return parent::close($code, $reason);
-    }
-
-    protected function newClient ($resource) {
-        return new ChatClient($resource, $this);
-    }
-
-    /**
-     * @param ChatClient $client
-     */
-    public function remove ($client) {
-        parent::remove($client);
-        echo "Removed: {$client}\n\n";
-        $this->broadcastText("[sys] {$client->nick} has left.");
-        $this->broadcastUserList();
-    }
-}
-
 class ChatClient extends WebSocketClient {
 
     /** @var string */
@@ -64,6 +26,10 @@ class ChatClient extends WebSocketClient {
     /** @var ChatServer */
     protected $server;
 
+    /**
+     * @param $resource
+     * @param ChatServer $server
+     */
     public function __construct ($resource, ChatServer $server) {
         parent::__construct($resource, $server);
         $this->nick = $this->getPeerName()[1];
@@ -78,15 +44,68 @@ class ChatClient extends WebSocketClient {
 
     protected function onStateOk (): void {
         echo "Handshake Successful: {$this}\n\n";
-        $this->getFrameHandler()->writeText("[sys] Your nick is {$this->nick}");
+        $this->frameHandler->writeText("[sys] Your nick is {$this->nick}");
         $this->server->broadcastText("[sys] {$this->nick} has joined.");
         $this->server->broadcastUserList();
     }
 
 }
 
+class ChatServer extends WebSocketServer {
+
+    /**
+     * @return ChatClient
+     */
+    public function accept (): ChatClient {
+        /** @var ChatClient $client */
+        $client = parent::accept();
+        echo "Connected: {$client}\n\n";
+        return $client;
+    }
+
+    public function broadcastUserList (): void {
+        $users = array_column($this->getClients(), 'nick');
+        $count = count($users);
+        sort($users);
+        $users = implode(', ', $users);
+        $this->broadcastText("[sys] Users ({$count}): {$users}");
+    }
+
+    /**
+     * @param int $code
+     * @param string $reason
+     * @return $this
+     */
+    public function close (int $code = Frame::CLOSE_INTERRUPT, $reason = '') {
+        echo "Shutting down!\n\n";
+        $this->broadcastText('[sys] Shutting down!');
+        return parent::close($code, $reason);
+    }
+
+    /**
+     * @param resource $resource
+     * @return ChatClient
+     */
+    protected function newClient ($resource): ChatClient {
+        return new ChatClient($resource, $this);
+    }
+
+    /**
+     * @param ChatClient $client
+     */
+    public function remove ($client): void {
+        parent::remove($client);
+        echo "Removed: {$client}\n\n";
+        $this->broadcastText("[sys] {$client->nick} has left.");
+        $this->broadcastUserList();
+    }
+}
+
 class FrameDebug extends FrameHandler {
 
+    /**
+     * @param Frame $frame
+     */
     public function onFrame (Frame $frame): void {
         echo "<< {$this->client} ";
         $length = $frame->getLength();
@@ -103,6 +122,11 @@ class FrameDebug extends FrameHandler {
         parent::onFrame($frame);
     }
 
+    /**
+     * @param bool $final
+     * @param int $opCode
+     * @param string $payload
+     */
     protected function writeFrame (bool $final, int $opCode, string $payload): void {
         echo ">> {$this->client} ";
         $length = strlen($payload);
@@ -122,6 +146,9 @@ class ChatHandler extends MessageHandler {
     /** @var ChatClient */
     protected $client;
 
+    /**
+     * @param string $text
+     */
     public function onText (string $text): void {
         $this->client->getServer()->broadcastText("[{$this->client->nick}] {$text}");
     }

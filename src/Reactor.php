@@ -17,7 +17,7 @@ class Reactor implements Countable {
     protected $sockets = [];
 
     /**
-     * Selects instances.
+     * Selects instances. Can be used to select non-reactive sockets.
      *
      * @see https://php.net/socket_select
      *
@@ -46,7 +46,7 @@ class Reactor implements Countable {
     }
 
     /**
-     * Adds a socket for selection.
+     * Adds a reactive socket for selection.
      *
      * @param ReactiveInterface $socket
      * @return $this
@@ -57,25 +57,25 @@ class Reactor implements Countable {
     }
 
     /**
-     * The number of sockets in the reactor.
+     * The number of reactive sockets in the reactor.
      *
      * @return int
      */
-    public function count () {
+    public function count (): int {
         return count($this->sockets);
     }
 
     /**
-     * @return SocketInterface[]
+     * @return ReactiveInterface[]
      */
     public function getSockets () {
         return $this->sockets;
     }
 
     /**
-     * Selects sockets for readability and calls their reactive methods.
+     * Selects the reactor's sockets and calls their reactive methods.
      *
-     * Invoke this in a loop that checks the reactor count as a condition.
+     * Invoke this in a loop that checks {@link Reactor::count()} a condition.
      *
      * Closed sockets are automatically removed from the reactor.
      *
@@ -105,13 +105,13 @@ class Reactor implements Countable {
     }
 
     /**
-     * Removes a socket from the reactor by ID.
+     * Removes a socket from the reactor.
      *
-     * @param int|ReactiveInterface $id
+     * @param ReactiveInterface $socket
      * @return $this
      */
-    public function remove ($id) {
-        unset($this->sockets[$id instanceof ReactiveInterface ? $id->getId() : $id]);
+    public function remove (ReactiveInterface $socket) {
+        unset($this->sockets[$socket->getId()]);
         return $this;
     }
 

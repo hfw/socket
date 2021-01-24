@@ -30,8 +30,8 @@ class StreamClient extends AbstractClient {
             throw new SocketError; // reliable errno
         }
         return [
-            new static(...array_merge([$fd[0]], $extra)),
-            new static(...array_merge([$fd[1]], $extra))
+            new static($fd[0], ...$extra),
+            new static($fd[1], ...$extra)
         ];
     }
 

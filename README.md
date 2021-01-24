@@ -1,9 +1,9 @@
 Helix::Socket
 -------------
 
-Standalone object-oriented BSD Sockets and WebSockets in `PHP 7.3`
+Standalone object-oriented BSD Sockets and WebSockets in `PHP 7.4`
 
-[![](https://img.shields.io/badge/PHP-~7.3-666999)](https://www.php.net)
+[![](https://img.shields.io/badge/PHP-~7.4-666999)](https://www.php.net)
 [![](https://img.shields.io/badge/packagist-a50)](https://packagist.org/packages/hfw/socket)
 [![](https://img.shields.io/badge/license-MIT-black)](LICENSE.txt)
 [![](https://scrutinizer-ci.com/g/hfw/socket/badges/quality-score.png?b=master)](https://scrutinizer-ci.com/g/hfw/socket)

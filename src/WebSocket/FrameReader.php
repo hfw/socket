@@ -10,9 +10,12 @@ use InvalidArgumentException;
  */
 class FrameReader {
 
-    // todo? doesn't allow unmasked frames.
-    //                         op((char     )|(short     )|(bigint      ))(mask       )
-    protected const REGEXP = '/^.([\x80-\xfd]|\xfe(?<n>..)|\xff(?<J>.{8}))(?<mask>.{4})/s';
+    /**
+     * This doesn't allow unmasked frames. TODO?
+     */
+    protected const REGEXP =
+        //op((char     )|(short     )|(bigint      ))(mask       )
+        '/^.([\x80-\xfd]|\xfe(?<n>..)|\xff(?<J>.{8}))(?<mask>.{4})/s';
 
     const MAX_LENGTH_RANGE = [125, 2 ** 63 - 1];
 
@@ -51,9 +54,10 @@ class FrameReader {
     }
 
     /**
-     * @return Frame|null
+     * @return null|Frame
+     * @throws WebSocketError
      */
-    protected function getFrame () {
+    protected function getFrame (): ?Frame {
         if (!$this->head) {
             if (preg_match(self::REGEXP, $this->buffer, $head)) {
                 [, $op, $len] = unpack('C2', $head[0]);
@@ -91,7 +95,7 @@ class FrameReader {
     }
 
     /**
-     * Constructs and yields all available frames from the peer.
+     * Yields all available frames from the peer.
      *
      * @return Generator|Frame[]
      */

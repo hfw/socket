@@ -25,7 +25,7 @@ class StreamServer extends AbstractServer {
      * @return StreamClient
      * @throws SocketError
      */
-    public function accept () {
+    public function accept (): StreamClient {
         if (!$resource = @socket_accept($this->resource)) {
             throw new SocketError($this->resource); // reliable errno
         }
@@ -58,7 +58,7 @@ class StreamServer extends AbstractServer {
      * @param resource $resource The accepted connection.
      * @return StreamClient
      */
-    protected function newClient ($resource) {
+    protected function newClient ($resource): StreamClient {
         return new StreamClient($resource);
     }
 

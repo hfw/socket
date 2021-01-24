@@ -2,6 +2,9 @@
 
 namespace Helix\Socket\WebSocket;
 
+/**
+ * Handles complete payloads received from the peer.
+ */
 class MessageHandler {
 
     /**
@@ -17,6 +20,8 @@ class MessageHandler {
     }
 
     /**
+     * Throws by default.
+     *
      * @param string $binary
      */
     public function onBinary (string $binary): void {
@@ -25,6 +30,8 @@ class MessageHandler {
     }
 
     /**
+     * Throws by default.
+     *
      * @param string $text
      */
     public function onText (string $text): void {

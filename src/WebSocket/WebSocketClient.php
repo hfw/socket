@@ -7,7 +7,7 @@ use Helix\Socket\ReactiveInterface;
 use Helix\Socket\StreamClient;
 
 /**
- * A WebSocket client.
+ * Wraps a WebSocket peer.
  *
  * @see https://tools.ietf.org/html/rfc6455
  */
@@ -48,7 +48,7 @@ class WebSocketClient extends StreamClient implements ReactiveInterface {
     protected $state = self::STATE_HANDSHAKE;
 
     /**
-     * @param $resource
+     * @param resource $resource
      * @param WebSocketServer $server
      */
     public function __construct ($resource, WebSocketServer $server) {
@@ -72,7 +72,7 @@ class WebSocketClient extends StreamClient implements ReactiveInterface {
      *
      * @param int|null $code Only used if `>= 1000`
      * @param string $reason
-     * @return StreamClient|void
+     * @return $this
      */
     public function close (int $code = null, string $reason = '') {
         try {
@@ -84,42 +84,42 @@ class WebSocketClient extends StreamClient implements ReactiveInterface {
         finally {
             $this->state = self::STATE_CLOSE;
             $this->server->remove($this);
-            parent::close();
+            return parent::close();
         }
     }
 
     /**
      * @return FrameHandler
      */
-    public function getFrameHandler () {
+    public function getFrameHandler (): FrameHandler {
         return $this->frameHandler ?? $this->frameHandler = new FrameHandler($this);
     }
 
     /**
      * @return FrameReader
      */
-    public function getFrameReader () {
+    public function getFrameReader (): FrameReader {
         return $this->frameReader ?? $this->frameReader = new FrameReader($this);
     }
 
     /**
      * @return HandShake
      */
-    public function getHandshake () {
+    public function getHandshake (): HandShake {
         return $this->handshake ?? $this->handshake = new HandShake($this);
     }
 
     /**
      * @return MessageHandler
      */
-    public function getMessageHandler () {
+    public function getMessageHandler (): MessageHandler {
         return $this->messageHandler ?? $this->messageHandler = new MessageHandler($this);
     }
 
     /**
      * @return WebSocketServer
      */
-    public function getServer () {
+    public function getServer (): WebSocketServer {
         return $this->server;
     }
 
@@ -185,37 +185,10 @@ class WebSocketClient extends StreamClient implements ReactiveInterface {
     }
 
     /**
-     * Stub.
+     * Called when the initial connection handshake succeeds and frame I/O can occur.
      */
     protected function onStateOk (): void {
-
-    }
-
-    /**
-     * @param FrameHandler $frameHandler
-     * @return $this
-     */
-    public function setFrameHandler (FrameHandler $frameHandler) {
-        $this->frameHandler = $frameHandler;
-        return $this;
-    }
-
-    /**
-     * @param FrameReader $frameReader
-     * @return $this
-     */
-    public function setFrameReader (FrameReader $frameReader) {
-        $this->frameReader = $frameReader;
-        return $this;
-    }
-
-    /**
-     * @param MessageHandler $messageHandler
-     * @return $this
-     */
-    public function setMessageHandler (MessageHandler $messageHandler) {
-        $this->messageHandler = $messageHandler;
-        return $this;
+        // stub
     }
 
 }

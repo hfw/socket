@@ -45,6 +45,9 @@ class HandShake {
      */
     protected $sizeLimit = 4096;
 
+    /**
+     * @param WebSocketClient $client
+     */
     public function __construct (WebSocketClient $client) {
         $this->client = $client;
     }
@@ -70,6 +73,12 @@ class HandShake {
         return $this->rsv;
     }
 
+    /**
+     * Negotiates the initial connection.
+     *
+     * @return bool
+     * @throws WebSocketError
+     */
     public function negotiate (): bool {
         $this->buffer .= $this->client->recvAll();
         try {
@@ -108,6 +117,9 @@ class HandShake {
         }
     }
 
+    /**
+     * Sends the connection upgrade headers.
+     */
     protected function upgrade (): void {
         $this->client->write(implode("\r\n", [
             "HTTP/1.1 101 Switching Protocols",
@@ -119,6 +131,8 @@ class HandShake {
 
     /**
      * Validates the received HTTP handshake headers, or throws.
+     *
+     * @throws WebSocketError
      */
     protected function validate (): void {
         if (!(

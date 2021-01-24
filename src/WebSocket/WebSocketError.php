@@ -9,7 +9,7 @@ use Throwable;
  * A WebSocket error.
  *
  * Error codes less than `1000` are not used by the protocol or exposed to peers,
- * but may be used internally by the implementer.
+ * but may be used internally per implementation.
  *
  * @see https://tools.ietf.org/html/rfc6455#section-7.4
  */

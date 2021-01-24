@@ -28,7 +28,7 @@ class DatagramServer extends AbstractServer {
      * @return string
      * @throws SocketError
      */
-    public function recv (int $length, int $flags = 0, string &$name = null, int &$port = 0): string {
+    public function recv (int $length, int $flags = 0, string &$name = '', int &$port = 0): string {
         $count = @socket_recvfrom($this->resource, $data, $length, $flags, $name, $port);
         if ($count === false) {
             throw new SocketError($this->resource, SOCKET_EOPNOTSUPP);

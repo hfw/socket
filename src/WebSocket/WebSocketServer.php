@@ -16,6 +16,8 @@ use Helix\Socket\StreamServer;
 class WebSocketServer extends StreamServer implements Countable, ReactiveInterface {
 
     /**
+     * Holds all connected clients.
+     *
      * @var WebSocketClient[]
      */
     protected $clients = [];
@@ -38,8 +40,11 @@ class WebSocketServer extends StreamServer implements Countable, ReactiveInterfa
     /**
      * @return WebSocketClient
      */
-    public function accept () {
-        /** @var WebSocketClient $client */
+    public function accept (): WebSocketClient {
+        /**
+         * @see newClient()
+         * @var WebSocketClient $client
+         */
         $client = parent::accept();
         $this->clients[$client->getId()] = $client;
         $this->reactor->add($client);
@@ -90,7 +95,7 @@ class WebSocketServer extends StreamServer implements Countable, ReactiveInterfa
      *
      * @param int $code
      * @param string $reason
-     * @return StreamServer
+     * @return $this
      */
     public function close (int $code = Frame::CLOSE_INTERRUPT, $reason = '') {
         foreach ($this->clients as $client) {
@@ -125,16 +130,20 @@ class WebSocketServer extends StreamServer implements Countable, ReactiveInterfa
      * @param resource $resource
      * @return WebSocketClient
      */
-    protected function newClient ($resource) {
+    protected function newClient ($resource): WebSocketClient {
         return new WebSocketClient($resource, $this);
     }
 
     /**
-     * Servers never get OOB data.
+     * WebSocket servers never get OOB data.
      */
     final public function onOutOfBand (): void {
+        // do nothing
     }
 
+    /**
+     * Auto-accept.
+     */
     public function onReadable (): void {
         $this->accept();
     }
@@ -144,7 +153,7 @@ class WebSocketServer extends StreamServer implements Countable, ReactiveInterfa
      *
      * @param WebSocketClient $client
      */
-    public function remove (WebSocketClient $client) {
+    public function remove ($client): void {
         unset($this->clients[$client->getId()]);
         $this->reactor->remove($client);
     }

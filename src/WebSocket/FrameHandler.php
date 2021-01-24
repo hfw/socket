@@ -3,7 +3,7 @@
 namespace Helix\Socket\WebSocket;
 
 /**
- * Handles received frames from the peer, and packs and sends frames.
+ * Interprets parsed frames from the peer, and packs and writes frames.
  */
 class FrameHandler {
 
@@ -46,6 +46,9 @@ class FrameHandler {
      */
     protected $maxLength = 10 * 1024 * 1024;
 
+    /**
+     * @param WebSocketClient $client
+     */
     public function __construct (WebSocketClient $client) {
         $this->client = $client;
     }
@@ -66,8 +69,6 @@ class FrameHandler {
 
     /**
      * When a `BINARY` frame is received.
-     *
-     * Throws by default.
      *
      * @param Frame $binary
      * @throws WebSocketError
@@ -97,30 +98,29 @@ class FrameHandler {
     }
 
     /**
-     * When a `CONTINUE` data fragment is received.
+     * When a `CONTINUE` frame (data fragment) is received.
      *
-     * @param Frame $frame
+     * @param Frame $fragment
      * @throws WebSocketError
      */
-    protected function onContinue (Frame $frame): void {
+    protected function onContinue (Frame $fragment): void {
+        if (!$this->continue) {
+            throw new WebSocketError(
+                Frame::CLOSE_PROTOCOL_ERROR,
+                "Received CONTINUE without a prior fragment.",
+                $fragment
+            );
+        }
         try {
-            switch ($this->continue) {
-                case Frame::OP_TEXT:
-                    $this->onText($frame);
-                    break;
-                case Frame::OP_BINARY:
-                    $this->onBinary($frame);
-                    break;
-                default:
-                    throw new WebSocketError(
-                        Frame::CLOSE_PROTOCOL_ERROR,
-                        "Received CONTINUE without a prior fragment.",
-                        $frame
-                    );
+            if ($this->continue === Frame::OP_TEXT) {
+                $this->onText($fragment);
+            }
+            else {
+                $this->onBinary($fragment);
             }
         }
         finally {
-            if ($frame->isFinal()) {
+            if ($fragment->isFinal()) {
                 $this->continue = null;
             }
         }
@@ -162,12 +162,16 @@ class FrameHandler {
         }
     }
 
+    /**
+     * @param Frame $data
+     * @throws WebSocketError
+     */
     protected function onData_SetContinue (Frame $data): void {
         if ($this->continue) {
-            $existing = Frame::NAMES[$this->continue];
+            $name = Frame::NAMES[$this->continue];
             throw new WebSocketError(
                 Frame::CLOSE_PROTOCOL_ERROR,
-                "Received interleaved {$data->getName()} against existing {$existing}",
+                "Received interleaved {$data->getName()} against existing {$name}",
                 $data
             );
         }
@@ -177,7 +181,7 @@ class FrameHandler {
     }
 
     /**
-     * Invoked by the client when a complete frame has been received.
+     * Called by {@link WebSocketClient} when a complete frame has been received.
      *
      * Delegates to the other handler methods using the control flow outlined in the RFC.
      *
@@ -199,6 +203,7 @@ class FrameHandler {
 
     /**
      * @param Frame $frame
+     * @throws WebSocketError
      */
     protected function onFrame_CheckLength (Frame $frame): void {
         if ($frame->isData()) {
@@ -251,8 +256,6 @@ class FrameHandler {
     /**
      * When a `TEXT` frame is received.
      *
-     * Throws by default.
-     *
      * @param Frame $text
      * @throws WebSocketError
      */
@@ -284,7 +287,7 @@ class FrameHandler {
     }
 
     /**
-     * Fragments data into frames and writes them to the peer.
+     * Sends a payload to the peer, fragmenting if needed.
      *
      * @param int $opCode
      * @param string $payload

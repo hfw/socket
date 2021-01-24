@@ -37,7 +37,7 @@ abstract class AbstractSocket implements SocketInterface {
         if (!$resource = @socket_create($domain, static::getType(), 0)) { // auto-protocol
             throw new SocketError; // reliable errno
         }
-        return new static(...array_merge([$resource], $extra));
+        return new static($resource, ...$extra);
     }
 
     /**
@@ -141,6 +141,9 @@ abstract class AbstractSocket implements SocketInterface {
         return $this->getOption(39); // SO_DOMAIN is not exposed by PHP
     }
 
+    /**
+     * @return int
+     */
     final public function getId (): int {
         return (int)$this->resource;
     }
@@ -162,6 +165,9 @@ abstract class AbstractSocket implements SocketInterface {
         return $value;
     }
 
+    /**
+     * @return resource
+     */
     final public function getResource () {
         return $this->resource;
     }
@@ -181,6 +187,9 @@ abstract class AbstractSocket implements SocketInterface {
         return [$addr, $port];
     }
 
+    /**
+     * @return bool
+     */
     public function isOpen (): bool {
         return is_resource($this->resource);
     }
@@ -245,6 +254,8 @@ abstract class AbstractSocket implements SocketInterface {
      * **Note: PHP provides no way to retrieve a socket's blocking mode.**
      *
      * Sockets are always created in blocking mode.
+     *
+     * If you're using a reactor, keep the sockets in blocking mode.
      *
      * Non-blocking errors are thrown when performing ordinary operations, even if unrelated to those operations.
      * This is known as error slippage.
