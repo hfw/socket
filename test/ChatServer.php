@@ -3,9 +3,9 @@
 // WebSocket example host.
 //
 // Run:
-// $ php WebHost.php
+// $ php ChatServer.php
 //
-// And open WebChat.html in a few browser tabs.
+// And open chat.html in a few browser tabs.
 
 error_reporting(E_ALL);
 
@@ -27,6 +27,14 @@ class ChatServer extends WebSocketServer {
         return $client;
     }
 
+    public function broadcastUserList () {
+        $users = array_column($this->getClients(), 'nick');
+        $count = count($users);
+        sort($users);
+        $users = implode(', ', $users);
+        $this->broadcastText("[sys] Users ({$count}): {$users}");
+    }
+
     public function close (int $code = Frame::CLOSE_INTERRUPT, $reason = '') {
         echo "Shutting down!\n\n";
         $this->broadcastText('[sys] Shutting down!');
@@ -44,6 +52,7 @@ class ChatServer extends WebSocketServer {
         parent::remove($client);
         echo "Removed: {$client}\n\n";
         $this->broadcastText("[sys] {$client->nick} has left.");
+        $this->broadcastUserList();
     }
 }
 
@@ -71,7 +80,7 @@ class ChatClient extends WebSocketClient {
         echo "Handshake Successful: {$this}\n\n";
         $this->getFrameHandler()->writeText("[sys] Your nick is {$this->nick}");
         $this->server->broadcastText("[sys] {$this->nick} has joined.");
-        $this->getFrameHandler()->writeText("[sys] Users: {$this->server->count()}");
+        $this->server->broadcastUserList();
     }
 
 }
