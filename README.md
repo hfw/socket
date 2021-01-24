@@ -17,7 +17,7 @@ Installation
 ------------
 
 ```
-composer require "hfw/socket@dev"
+composer require "hfw/socket"
 ```
 
 Class Diagram
