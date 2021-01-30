@@ -2,6 +2,8 @@
 
 namespace Helix\Socket\WebSocket;
 
+use LogicException;
+
 /**
  * Interprets parsed frames from the peer, and packs and writes frames.
  */
@@ -168,10 +170,9 @@ class FrameHandler {
      */
     protected function onData_SetContinue (Frame $data): void {
         if ($this->continue) {
-            $name = Frame::NAMES[$this->continue];
             throw new WebSocketError(
                 Frame::CLOSE_PROTOCOL_ERROR,
-                "Received interleaved {$data->getName()} against existing {$name}",
+                "Received interleaved {$data->getName()} against existing " . Frame::NAMES[$this->continue],
                 $data
             );
         }
@@ -227,7 +228,11 @@ class FrameHandler {
     protected function onFrame_CheckRsv (Frame $frame): void {
         if ($badRsv = $frame->getRsv() & ~$this->client->getHandshake()->getRsv()) {
             $badRsv = str_pad(base_convert($badRsv >> 4, 10, 2), 3, '0', STR_PAD_LEFT);
-            throw new WebSocketError(Frame::CLOSE_PROTOCOL_ERROR, "Received unknown RSV bits: 0b{$badRsv}");
+            throw new WebSocketError(
+                Frame::CLOSE_PROTOCOL_ERROR,
+                "Received unknown RSV bits: 0b{$badRsv}",
+                $frame
+            );
         }
     }
 
@@ -329,10 +334,7 @@ class FrameHandler {
      */
     protected function writeFrame (bool $final, int $opCode, string $payload): void {
         if ($opCode & 0x08 and !$final) {
-            throw new WebSocketError(
-                Frame::CLOSE_INTERNAL_ERROR,
-                "Would have sent a fragmented control frame ({$opCode}) {$payload}"
-            );
+            throw new LogicException("Would have sent a fragmented control frame ({$opCode}) {$payload}");
         }
         $head = chr($final ? 0x80 | $opCode : $opCode);
         $length = strlen($payload);

@@ -3,6 +3,9 @@
 namespace Helix\Socket;
 
 use Countable;
+use Helix\Socket\WebSocket\WebSocketClient;
+use Helix\Socket\WebSocket\WebSocketError;
+use Throwable;
 
 /**
  * Selects and calls reactive sockets when they are readable.
@@ -73,6 +76,22 @@ class Reactor implements Countable {
     }
 
     /**
+     * @param int $channel
+     * @param ReactiveInterface $socket
+     * @param Throwable $error
+     */
+    public function onError (int $channel, $socket, Throwable $error) {
+        unset($channel);
+        if ($socket instanceof WebSocketClient and $error instanceof WebSocketError) {
+            $socket->close($error->getCode(), $error->getMessage());
+        }
+        else {
+            $socket->close();
+        }
+        echo $error;
+    }
+
+    /**
      * Selects the reactor's sockets and calls their reactive methods.
      *
      * Invoke this in a loop that checks {@link Reactor::count()} a condition.
@@ -86,20 +105,20 @@ class Reactor implements Countable {
         /** @var ReactiveInterface[][] $rwe */
         $rwe = [$this->sockets, [], $this->sockets];
         $count = static::select($rwe[0], $rwe[1], $rwe[2], $timeout);
-        try {
-            foreach ($rwe[2] as $id => $socket) {
-                $socket->onOutOfBand();
-            }
-            foreach ($rwe[0] as $id => $socket) {
-                $socket->onReadable();
-            }
-        }
-        finally {
-            array_walk_recursive($rwe, function(ReactiveInterface $each) {
-                if (!$each->isOpen()) {
-                    $this->remove($each);
+        foreach ([2 => 'onOutOfBand', 0 => 'onReadable'] as $channel => $method) {
+            foreach ($rwe[$channel] as $id => $socket) {
+                try {
+                    $socket->{$method}();
                 }
-            });
+                catch (Throwable $error) {
+                    $this->onError($channel, $socket, $error);
+                }
+                finally {
+                    if (!$socket->isOpen()) {
+                        $this->remove($socket);
+                    }
+                }
+            }
         }
         return $count;
     }
@@ -114,5 +133,4 @@ class Reactor implements Countable {
         unset($this->sockets[$socket->getId()]);
         return $this;
     }
-
 }
