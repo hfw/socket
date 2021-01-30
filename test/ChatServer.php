@@ -14,7 +14,6 @@ require_once __DIR__ . '/../vendor/autoload.php';
 use Helix\Socket\Reactor;
 use Helix\Socket\WebSocket\Frame;
 use Helix\Socket\WebSocket\FrameHandler;
-use Helix\Socket\WebSocket\MessageHandler;
 use Helix\Socket\WebSocket\WebSocketClient;
 use Helix\Socket\WebSocket\WebSocketServer;
 
@@ -34,7 +33,6 @@ class ChatClient extends WebSocketClient {
         parent::__construct($resource, $server);
         $this->nick = $this->getPeerName()[1];
         $this->frameHandler = new FrameDebug($this);
-        $this->messageHandler = new ChatHandler($this);
     }
 
     public function close (int $code = null, string $reason = '') {
@@ -47,6 +45,10 @@ class ChatClient extends WebSocketClient {
         $this->frameHandler->writeText("[sys] Your nick is {$this->nick}");
         $this->server->broadcastText("[sys] {$this->nick} has joined.");
         $this->server->broadcastUserList();
+    }
+
+    public function onText (string $text): void {
+        $this->server->broadcastText("[{$this->nick}] {$text}");
     }
 
 }
@@ -139,20 +141,6 @@ class FrameDebug extends FrameHandler {
         echo "\n";
         parent::writeFrame($final, $opCode, $payload);
     }
-}
-
-class ChatHandler extends MessageHandler {
-
-    /** @var ChatClient */
-    protected $client;
-
-    /**
-     * @param string $text
-     */
-    public function onText (string $text): void {
-        $this->client->getServer()->broadcastText("[{$this->client->nick}] {$text}");
-    }
-
 }
 
 $reactor = new Reactor();

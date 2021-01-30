@@ -80,7 +80,7 @@ class FrameHandler {
         if ($binary->isFinal()) {
             $message = $this->buffer;
             $this->buffer = '';
-            $this->client->getMessageHandler()->onBinary($message);
+            $this->client->onBinary($message);
         }
     }
 
@@ -267,9 +267,12 @@ class FrameHandler {
     protected function onText (Frame $text): void {
         $this->buffer .= $text->getPayload();
         if ($text->isFinal()) {
+            if (!mb_detect_encoding($this->buffer, 'UTF-8', true)) {
+                throw new WebSocketError(Frame::CLOSE_BAD_DATA, "Received TEXT is not UTF-8.");
+            }
             $message = $this->buffer;
             $this->buffer = '';
-            $this->client->getMessageHandler()->onText($message);
+            $this->client->onText($message);
         }
     }
 

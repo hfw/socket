@@ -33,11 +33,6 @@ class WebSocketClient extends StreamClient implements ReactiveInterface {
     protected $handshake;
 
     /**
-     * @var MessageHandler
-     */
-    protected $messageHandler;
-
-    /**
      * @var WebSocketServer
      */
     protected $server;
@@ -110,13 +105,6 @@ class WebSocketClient extends StreamClient implements ReactiveInterface {
     }
 
     /**
-     * @return MessageHandler
-     */
-    public function getMessageHandler (): MessageHandler {
-        return $this->messageHandler ?? $this->messageHandler = new MessageHandler($this);
-    }
-
-    /**
      * @return WebSocketServer
      */
     public function getServer (): WebSocketServer {
@@ -135,6 +123,16 @@ class WebSocketClient extends StreamClient implements ReactiveInterface {
      */
     final public function isOk (): bool {
         return $this->state === self::STATE_OK;
+    }
+
+    /**
+     * Called when a complete binary payload is received.
+     *
+     * @param string $binary
+     */
+    public function onBinary (string $binary): void {
+        unset($binary);
+        throw new WebSocketError(Frame::CLOSE_UNHANDLED_DATA, "I don't handle binary data.");
     }
 
     /**
@@ -189,6 +187,16 @@ class WebSocketClient extends StreamClient implements ReactiveInterface {
      */
     protected function onStateOk (): void {
         // stub
+    }
+
+    /**
+     * Called when a complete text payload is received.
+     *
+     * @param string $text
+     */
+    public function onText (string $text): void {
+        unset($text);
+        throw new WebSocketError(Frame::CLOSE_UNHANDLED_DATA, "I don't handle text.");
     }
 
 }
