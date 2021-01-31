@@ -2,9 +2,9 @@
 
 namespace Helix\Socket\WebSocket;
 
-use Exception;
 use Helix\Socket\ReactiveInterface;
 use Helix\Socket\StreamClient;
+use Throwable;
 
 /**
  * Wraps a WebSocket peer.
@@ -13,9 +13,20 @@ use Helix\Socket\StreamClient;
  */
 class WebSocketClient extends StreamClient implements ReactiveInterface {
 
+    /**
+     * The peer has connected but hasn't negotiated a session yet.
+     */
     const STATE_HANDSHAKE = 0;
+
+    /**
+     * The session is active and the client can perform frame I/O with the peer.
+     */
     const STATE_OK = 1;
-    const STATE_CLOSE = 2;
+
+    /**
+     * The peer has disconnected.
+     */
+    const STATE_CLOSED = 2;
 
     /**
      * @var FrameHandler
@@ -49,6 +60,9 @@ class WebSocketClient extends StreamClient implements ReactiveInterface {
     public function __construct ($resource, WebSocketServer $server) {
         parent::__construct($resource);
         $this->server = $server;
+        $this->handshake = new HandShake($this);
+        $this->frameReader = new FrameReader($this);
+        $this->frameHandler = new FrameHandler($this);
     }
 
     /**
@@ -65,43 +79,36 @@ class WebSocketClient extends StreamClient implements ReactiveInterface {
      * https://tools.ietf.org/html/rfc6455#section-7.4.2
      * > Status codes in the range 0-999 are not used.
      *
-     * @param int|null $code Only used if `>= 1000`
-     * @param string $reason
+     * @param int|null $code Sent to the peer if >= 1000
+     * @param string $reason Sent to the peer, if code is >= 1000
      * @return $this
      */
     public function close (int $code = null, string $reason = '') {
         try {
-            if ($code >= 1000 and $this->state === self::STATE_OK) {
-                $this->getFrameHandler()->writeClose($code, $reason);
-                $this->shutdown(self::CH_WRITE);
+            if ($code >= 1000 and $this->isOk()) {
+                $this->frameHandler->writeClose($code, $reason);
             }
         }
         finally {
-            $this->state = self::STATE_CLOSE;
             $this->server->remove($this);
-            return parent::close();
+            parent::close();
+            $this->state = self::STATE_CLOSED;
         }
+        return $this;
     }
 
     /**
      * @return FrameHandler
      */
     public function getFrameHandler (): FrameHandler {
-        return $this->frameHandler ?? $this->frameHandler = new FrameHandler($this);
-    }
-
-    /**
-     * @return FrameReader
-     */
-    public function getFrameReader (): FrameReader {
-        return $this->frameReader ?? $this->frameReader = new FrameReader($this);
+        return $this->frameHandler;
     }
 
     /**
      * @return HandShake
      */
     public function getHandshake (): HandShake {
-        return $this->handshake ?? $this->handshake = new HandShake($this);
+        return $this->handshake;
     }
 
     /**
@@ -126,9 +133,12 @@ class WebSocketClient extends StreamClient implements ReactiveInterface {
     }
 
     /**
-     * Called when a complete binary payload is received.
+     * Called when a complete `BINARY` payload is received from the peer.
+     *
+     * Throws by default.
      *
      * @param string $binary
+     * @throws WebSocketError
      */
     public function onBinary (string $binary): void {
         unset($binary);
@@ -136,18 +146,54 @@ class WebSocketClient extends StreamClient implements ReactiveInterface {
     }
 
     /**
+     * Called when a `CLOSE` frame is received from the peer.
+     *
+     * @param int $code
+     * @param string $reason
+     */
+    public function onClose (int $code, string $reason): void {
+        unset($code, $reason);
+        $this->close();
+    }
+
+    /**
      * WebSockets do not use the out-of-band channel.
      *
      * The RFC says the connection must be dropped if any unsupported activity occurs.
+     *
+     * Closes the connection with a protocol-error frame.
      */
     final public function onOutOfBand (): void {
         $this->close(Frame::CLOSE_PROTOCOL_ERROR, "Received out-of-band data.");
     }
 
     /**
-     * Delegates received data to handlers.
+     * Called when a `PING` is received from the peer.
      *
-     * @throws Exception
+     * Automatically PONGs back the payload back by default.
+     *
+     * @param string $message
+     */
+    public function onPing (string $message): void {
+        $this->frameHandler->writePong($message);
+    }
+
+    /**
+     * Called when a `PONG` is received from the peer.
+     *
+     * Does nothing by default.
+     *
+     * @param string $message
+     */
+    public function onPong (string $message): void {
+        // stub
+    }
+
+    /**
+     * Delegates the read-channel to handlers.
+     *
+     * @throws WebSocketError
+     * @throws Throwable
      */
     public function onReadable (): void {
         if (!strlen($this->recv(1, MSG_PEEK))) { // peer has shut down writing, or closed.
@@ -157,18 +203,17 @@ class WebSocketClient extends StreamClient implements ReactiveInterface {
         try {
             switch ($this->state) {
                 case self::STATE_HANDSHAKE:
-                    if ($this->getHandshake()->negotiate()) {
+                    if ($this->handshake->negotiate()) {
                         $this->state = self::STATE_OK;
                         $this->onStateOk();
                     }
                     return;
                 case self::STATE_OK:
-                    $frameHandler = $this->getFrameHandler();
-                    foreach ($this->getFrameReader()->getFrames() as $frame) {
-                        $frameHandler->onFrame($frame);
+                    foreach ($this->frameReader->getFrames() as $frame) {
+                        $this->frameHandler->onFrame($frame);
                     }
                     return;
-                case self::STATE_CLOSE:
+                case self::STATE_CLOSED:
                     return;
             }
         }
@@ -176,7 +221,7 @@ class WebSocketClient extends StreamClient implements ReactiveInterface {
             $this->close($e->getCode(), $e->getMessage());
             throw $e;
         }
-        catch (Exception $e) {
+        catch (Throwable $e) {
             $this->close(Frame::CLOSE_INTERNAL_ERROR);
             throw $e;
         }
@@ -184,19 +229,42 @@ class WebSocketClient extends StreamClient implements ReactiveInterface {
 
     /**
      * Called when the initial connection handshake succeeds and frame I/O can occur.
+     *
+     * Does nothing by default.
      */
     protected function onStateOk (): void {
         // stub
     }
 
     /**
-     * Called when a complete text payload is received.
+     * Called when a complete `TEXT` payload is received from the peer.
+     *
+     * Throws by default.
      *
      * @param string $text
+     * @throws WebSocketError
      */
     public function onText (string $text): void {
         unset($text);
         throw new WebSocketError(Frame::CLOSE_UNHANDLED_DATA, "I don't handle text.");
+    }
+
+    /**
+     * Forwards to the {@link FrameHandler}
+     *
+     * @param string $binary
+     */
+    public function writeBinary (string $binary): void {
+        $this->frameHandler->writeBinary($binary);
+    }
+
+    /**
+     * Forwards to the {@link FrameHandler}
+     *
+     * @param string $text
+     */
+    public function writeText (string $text): void {
+        $this->frameHandler->writeText($text);
     }
 
 }

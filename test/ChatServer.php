@@ -32,7 +32,7 @@ class ChatClient extends WebSocketClient {
     public function __construct ($resource, ChatServer $server) {
         parent::__construct($resource, $server);
         $this->nick = $this->getPeerName()[1];
-        $this->frameHandler = new FrameDebug($this);
+        $this->frameHandler = new FrameDebugHandler($this);
     }
 
     public function close (int $code = null, string $reason = '') {
@@ -103,7 +103,7 @@ class ChatServer extends WebSocketServer {
     }
 }
 
-class FrameDebug extends FrameHandler {
+class FrameDebugHandler extends FrameHandler {
 
     /**
      * @param Frame $frame

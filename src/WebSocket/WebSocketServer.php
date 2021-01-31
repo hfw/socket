@@ -100,7 +100,7 @@ class WebSocketServer extends StreamServer implements Countable, ReactiveInterfa
     public function close (int $code = Frame::CLOSE_INTERRUPT, $reason = '') {
         foreach ($this->clients as $client) {
             try {
-                $client->close($code, $reason);
+                $client->close($code, $reason); // clients remove themselves
             }
             catch (Exception $e) {
                 continue;

@@ -70,22 +70,23 @@ class FrameHandler {
     }
 
     /**
-     * When a `BINARY` frame is received.
+     * Progressively receives `BINARY` data into the buffer until the payload is complete.
+     * Passes the complete payload up to {@link WebSocketClient::onBinary()}
      *
-     * @param Frame $binary
+     * @param Frame $frame
      * @throws WebSocketError
      */
-    protected function onBinary (Frame $binary): void {
-        $this->buffer .= $binary->getPayload();
-        if ($binary->isFinal()) {
-            $message = $this->buffer;
+    protected function onBinary (Frame $frame): void {
+        $this->buffer .= $frame->getPayload();
+        if ($frame->isFinal()) {
+            $binary = $this->buffer;
             $this->buffer = '';
-            $this->client->onBinary($message);
+            $this->client->onBinary($binary);
         }
     }
 
     /**
-     * When a `CLOSE` frame is received.
+     * When a `CLOSE` frame is received. Calls {@link WebSocketClient::onClose()}
      *
      * https://tools.ietf.org/html/rfc6455#section-5.5.1
      * > If an endpoint receives a Close frame and did not previously send a
@@ -93,36 +94,36 @@ class FrameHandler {
      * > sending a Close frame in response, the endpoint typically echos the
      * > status code it received.)
      *
-     * @param Frame $close
+     * @param Frame $frame
      */
-    protected function onClose (Frame $close): void {
-        $this->client->close($close->getCloseCode());
+    protected function onClose (Frame $frame): void {
+        $this->client->onClose($frame->getCloseCode(), $frame->getCloseReason());
     }
 
     /**
      * When a `CONTINUE` frame (data fragment) is received.
      *
-     * @param Frame $fragment
+     * @param Frame $frame
      * @throws WebSocketError
      */
-    protected function onContinue (Frame $fragment): void {
+    protected function onContinue (Frame $frame): void {
         if (!$this->continue) {
             throw new WebSocketError(
                 Frame::CLOSE_PROTOCOL_ERROR,
                 "Received CONTINUE without a prior fragment.",
-                $fragment
+                $frame
             );
         }
         try {
             if ($this->continue === Frame::OP_TEXT) {
-                $this->onText($fragment);
+                $this->onText($frame);
             }
             else {
-                $this->onBinary($fragment);
+                $this->onBinary($frame);
             }
         }
         finally {
-            if ($fragment->isFinal()) {
+            if ($frame->isFinal()) {
                 $this->continue = null;
             }
         }
@@ -135,49 +136,54 @@ class FrameHandler {
      * > Control frames (see Section 5.5) MAY be injected in the middle of
      * > a fragmented message.
      *
-     * @param Frame $control
+     * @param Frame $frame
      */
-    protected function onControl (Frame $control): void {
-        if ($control->isClose()) {
-            $this->onClose($control);
+    protected function onControl (Frame $frame): void {
+        if ($frame->isClose()) {
+            $this->onClose($frame);
         }
-        elseif ($control->isPing()) {
-            $this->onPing($control);
+        elseif ($frame->isPing()) {
+            $this->onPing($frame);
         }
-        elseif ($control->isPong()) {
-            $this->onPong($control);
+        elseif ($frame->isPong()) {
+            $this->onPong($frame);
+        }
+        else {
+            throw new WebSocketError(Frame::CLOSE_PROTOCOL_ERROR, "Unsupported control frame.", $frame);
         }
     }
 
     /**
      * When an initial data frame (not `CONTINUE`) is received.
      *
-     * @param Frame $data
+     * @param Frame $frame
      */
-    protected function onData (Frame $data): void {
-        $this->onData_SetContinue($data);
-        if ($data->isText()) {
-            $this->onText($data);
+    protected function onData (Frame $frame): void {
+        $this->onData_SetContinue($frame);
+        if ($frame->isText()) {
+            $this->onText($frame);
         }
-        elseif ($data->isBinary()) {
-            $this->onBinary($data);
+        elseif ($frame->isBinary()) {
+            $this->onBinary($frame);
         }
     }
 
     /**
-     * @param Frame $data
+     * Flags that we are expecting more data of the same type.
+     *
+     * @param Frame $frame
      * @throws WebSocketError
      */
-    protected function onData_SetContinue (Frame $data): void {
+    protected function onData_SetContinue (Frame $frame): void {
         if ($this->continue) {
             throw new WebSocketError(
                 Frame::CLOSE_PROTOCOL_ERROR,
-                "Received interleaved {$data->getName()} against existing " . Frame::NAMES[$this->continue],
-                $data
+                "Received interleaved {$frame->getName()} against existing " . Frame::NAMES[$this->continue],
+                $frame
             );
         }
-        if (!$data->isFinal()) {
-            $this->continue = $data->getOpCode();
+        if (!$frame->isFinal()) {
+            $this->continue = $frame->getOpCode();
         }
     }
 
@@ -185,6 +191,8 @@ class FrameHandler {
      * Called by {@link WebSocketClient} when a complete frame has been received.
      *
      * Delegates to the other handler methods using the control flow outlined in the RFC.
+     *
+     * Eventually calls back to the {@link WebSocketClient} when payloads are complete.
      *
      * @param Frame $frame
      */
@@ -203,6 +211,8 @@ class FrameHandler {
     }
 
     /**
+     * Validates the frame length.
+     *
      * @param Frame $frame
      * @throws WebSocketError
      */
@@ -220,7 +230,7 @@ class FrameHandler {
     }
 
     /**
-     * Throws if unknown RSV bits are received.
+     * Validates the frame's RSV bits against the initial connection handshake.
      *
      * @param Frame $frame
      * @throws WebSocketError
@@ -237,42 +247,39 @@ class FrameHandler {
     }
 
     /**
-     * When a `PING` frame is received.
+     * When a `PING` is received. Calls {@link WebSocketClient::onPing()}
      *
-     * Automatically pongs the payload back by default.
-     *
-     * @param Frame $ping
+     * @param Frame $frame
      */
-    protected function onPing (Frame $ping): void {
-        $this->writePong($ping->getPayload());
+    protected function onPing (Frame $frame): void {
+        $this->client->onPing($frame->getPayload());
     }
 
     /**
-     * When a `PONG` frame is received.
+     * When a `PONG` is received. Calls {@link WebSocketClient::onPong()}
      *
-     * Does nothing by default.
-     *
-     * @param Frame $pong
+     * @param Frame $frame
      */
-    protected function onPong (Frame $pong): void {
-        // stub
+    protected function onPong (Frame $frame): void {
+        $this->client->onPong($frame->getPayload());
     }
 
     /**
-     * When a `TEXT` frame is received.
+     * Progressively receives `TEXT` data until the payload is complete.
+     * Validates the complete payload as UTF-8 and passes it up to {@link WebSocketClient::onText()}
      *
-     * @param Frame $text
+     * @param Frame $frame
      * @throws WebSocketError
      */
-    protected function onText (Frame $text): void {
-        $this->buffer .= $text->getPayload();
-        if ($text->isFinal()) {
+    protected function onText (Frame $frame): void {
+        $this->buffer .= $frame->getPayload();
+        if ($frame->isFinal()) {
             if (!mb_detect_encoding($this->buffer, 'UTF-8', true)) {
-                throw new WebSocketError(Frame::CLOSE_BAD_DATA, "Received TEXT is not UTF-8.");
+                throw new WebSocketError(Frame::CLOSE_BAD_DATA, "The received TEXT is not UTF-8.");
             }
-            $message = $this->buffer;
+            $text = $this->buffer;
             $this->buffer = '';
-            $this->client->onText($message);
+            $this->client->onText($text);
         }
     }
 
