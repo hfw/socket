@@ -99,13 +99,6 @@ class WebSocketClient extends StreamClient implements ReactiveInterface {
     }
 
     /**
-     * @return Handshake
-     */
-    public function getHandshake (): Handshake {
-        return $this->handshake;
-    }
-
-    /**
      * @return WebSocketServer
      */
     public function getServer (): WebSocketServer {
