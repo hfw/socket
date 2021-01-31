@@ -6,11 +6,15 @@ use LogicException;
 
 /**
  * Interprets parsed frames from the peer, and packs and writes frames.
+ *
+ * TODO: Multiplex by RSV.
+ *
+ * TODO: Stream writing.
  */
 class FrameHandler {
 
     /**
-     * The `DATA` message buffer.
+     * The message buffer for data frames.
      *
      * @var string
      */
@@ -22,7 +26,7 @@ class FrameHandler {
     protected $client;
 
     /**
-     * Resume opCode for the `CONTINUE` handler.
+     * Resume opCode for the `CONTINUATION` handler.
      *
      * @var int|null
      */
@@ -40,7 +44,7 @@ class FrameHandler {
     protected $fragmentSize = 128 * 1024;
 
     /**
-     * Maximum inbound message length.
+     * Maximum inbound message length (complete payload).
      *
      * Defaults to 10 MiB.
      *
@@ -49,10 +53,23 @@ class FrameHandler {
     protected $maxLength = 10 * 1024 * 1024;
 
     /**
+     * @var FrameReader
+     */
+    protected $reader;
+
+    /**
+     * Whether binary I/O should bypass buffers.
+     *
+     * @var bool
+     */
+    protected $stream = false;
+
+    /**
      * @param WebSocketClient $client
      */
     public function __construct (WebSocketClient $client) {
         $this->client = $client;
+        $this->reader = new FrameReader($client);
     }
 
     /**
@@ -70,18 +87,33 @@ class FrameHandler {
     }
 
     /**
+     * @return bool
+     */
+    public function isStream (): bool {
+        return $this->stream;
+    }
+
+    /**
      * Progressively receives `BINARY` data into the buffer until the payload is complete.
      * Passes the complete payload up to {@link WebSocketClient::onBinary()}
+     *
+     * When {@link $stream} is `true`, this bypasses the buffer.
      *
      * @param Frame $frame
      * @throws WebSocketError
      */
     protected function onBinary (Frame $frame): void {
-        $this->buffer .= $frame->getPayload();
-        if ($frame->isFinal()) {
-            $binary = $this->buffer;
-            $this->buffer = '';
-            $this->client->onBinary($binary);
+        if ($this->stream) {
+            $this->client->onBinary($frame->getPayload());
+        }
+        else {
+            $this->onData_CheckLength($frame);
+            $this->buffer .= $frame->getPayload();
+            if ($frame->isFinal()) {
+                $binary = $this->buffer;
+                $this->buffer = '';
+                $this->client->onBinary($binary);
+            }
         }
     }
 
@@ -101,16 +133,16 @@ class FrameHandler {
     }
 
     /**
-     * When a `CONTINUE` frame (data fragment) is received.
+     * When a `CONTINUATION` frame (data fragment) is received.
      *
      * @param Frame $frame
      * @throws WebSocketError
      */
-    protected function onContinue (Frame $frame): void {
+    protected function onContinuation (Frame $frame): void {
         if (!$this->continue) {
             throw new WebSocketError(
                 Frame::CLOSE_PROTOCOL_ERROR,
-                "Received CONTINUE without a prior fragment.",
+                "Received CONTINUATION without a prior fragment.",
                 $frame
             );
         }
@@ -154,95 +186,71 @@ class FrameHandler {
     }
 
     /**
-     * When an initial data frame (not `CONTINUE`) is received.
+     * When an initial data frame (not `CONTINUATION`) is received.
      *
      * @param Frame $frame
      */
     protected function onData (Frame $frame): void {
-        $this->onData_SetContinue($frame);
-        if ($frame->isText()) {
-            $this->onText($frame);
+        // did we get a continuation?
+        if ($frame->isContinuation()) {
+            $this->onContinuation($frame);
         }
-        elseif ($frame->isBinary()) {
-            $this->onBinary($frame);
-        }
-    }
-
-    /**
-     * Flags that we are expecting more data of the same type.
-     *
-     * @param Frame $frame
-     * @throws WebSocketError
-     */
-    protected function onData_SetContinue (Frame $frame): void {
-        if ($this->continue) {
+        // were we expecting one?
+        elseif ($this->continue) {
             throw new WebSocketError(
                 Frame::CLOSE_PROTOCOL_ERROR,
                 "Received interleaved {$frame->getName()} against existing " . Frame::NAMES[$this->continue],
                 $frame
             );
         }
-        if (!$frame->isFinal()) {
-            $this->continue = $frame->getOpCode();
+        // the data is new
+        else {
+            // will we get a continuation later?
+            if (!$frame->isFinal()) {
+                $this->continue = $frame->getOpCode();
+            }
+            // handle new text
+            if ($frame->isText()) {
+                $this->onText($frame);
+            }
+            // handle new binary
+            else {
+                $this->onBinary($frame);
+            }
+        }
+    }
+
+    /**
+     * Validates the message length, but only when the buffer is in use.
+     *
+     * @param Frame $frame
+     * @throws WebSocketError
+     */
+    protected function onData_CheckLength (Frame $frame): void {
+        if (strlen($this->buffer) + $frame->getLength() > $this->maxLength) {
+            throw new WebSocketError(
+                Frame::CLOSE_TOO_LARGE,
+                "Message would exceed {$this->maxLength} bytes",
+                $frame
+            );
         }
     }
 
     /**
      * Called by {@link WebSocketClient} when a complete frame has been received.
      *
-     * Delegates to the other handler methods using the control flow outlined in the RFC.
+     * Delegates to the other handler methods using the program logic outlined in the RFC.
      *
      * Eventually calls back to the {@link WebSocketClient} when payloads are complete.
      *
      * @param Frame $frame
      */
     public function onFrame (Frame $frame): void {
-        $this->onFrame_CheckRsv($frame);
-        $this->onFrame_CheckLength($frame);
         if ($frame->isControl()) {
             $this->onControl($frame);
         }
-        elseif ($frame->isContinue()) {
-            $this->onContinue($frame);
-        }
         else {
             $this->onData($frame);
-        }
-    }
-
-    /**
-     * Validates the frame length.
-     *
-     * @param Frame $frame
-     * @throws WebSocketError
-     */
-    protected function onFrame_CheckLength (Frame $frame): void {
-        if ($frame->isData()) {
-            $length = strlen($this->buffer);
-            if ($length + $frame->getLength() > $this->maxLength) {
-                throw new WebSocketError(
-                    Frame::CLOSE_TOO_LARGE,
-                    "Message would exceed {$this->maxLength} bytes",
-                    $frame
-                );
-            }
-        }
-    }
-
-    /**
-     * Validates the frame's RSV bits against the initial connection handshake.
-     *
-     * @param Frame $frame
-     * @throws WebSocketError
-     */
-    protected function onFrame_CheckRsv (Frame $frame): void {
-        if ($badRsv = $frame->getRsv() & ~$this->client->getHandshake()->getRsv()) {
-            $badRsv = str_pad(base_convert($badRsv >> 4, 10, 2), 3, '0', STR_PAD_LEFT);
-            throw new WebSocketError(
-                Frame::CLOSE_PROTOCOL_ERROR,
-                "Received unknown RSV bits: 0b{$badRsv}",
-                $frame
-            );
         }
     }
 
@@ -265,6 +273,15 @@ class FrameHandler {
     }
 
     /**
+     * Uses {@link FrameReader} to read frames and passes them off to {@link onFrame()}
+     */
+    public function onReadable (): void {
+        foreach ($this->reader->getFrames() as $frame) {
+            $this->onFrame($frame);
+        }
+    }
+
+    /**
      * Progressively receives `TEXT` data until the payload is complete.
      * Validates the complete payload as UTF-8 and passes it up to {@link WebSocketClient::onText()}
      *
@@ -272,6 +289,7 @@ class FrameHandler {
      * @throws WebSocketError
      */
     protected function onText (Frame $frame): void {
+        $this->onData_CheckLength($frame);
         $this->buffer .= $frame->getPayload();
         if ($frame->isFinal()) {
             if (!mb_detect_encoding($this->buffer, 'UTF-8', true)) {
@@ -302,7 +320,16 @@ class FrameHandler {
     }
 
     /**
-     * Sends a payload to the peer, fragmenting if needed.
+     * @param bool $stream
+     * @return $this
+     */
+    public function setStream (bool $stream) {
+        $this->stream = $stream;
+        return $this;
+    }
+
+    /**
+     * Sends a complete message to the peer, fragmenting if needed.
      *
      * @param int $opCode
      * @param string $payload
@@ -313,7 +340,7 @@ class FrameHandler {
         do {
             $fragment = substr($payload, $offset, $this->fragmentSize);
             if ($offset) {
-                $opCode = Frame::OP_CONTINUE;
+                $opCode = Frame::OP_CONTINUATION;
             }
             $offset += strlen($fragment);
             $this->writeFrame($offset >= $total, $opCode, $fragment);

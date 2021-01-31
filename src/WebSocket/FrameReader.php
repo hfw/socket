@@ -3,23 +3,26 @@
 namespace Helix\Socket\WebSocket;
 
 use Generator;
-use InvalidArgumentException;
 
 /**
  * Reads frames from the peer.
+ *
+ * https://tools.ietf.org/html/rfc6455#section-5
+ *
+ * TODO: Support unmasked frames.
  */
 class FrameReader {
 
     /**
-     * This doesn't allow unmasked frames. TODO?
+     * https://tools.ietf.org/html/rfc6455#section-5.2
      */
     protected const REGEXP =
         //op((char     )|(short     )|(bigint      ))(mask       )
         '/^.([\x80-\xfd]|\xfe(?<n>..)|\xff(?<J>.{8}))(?<mask>.{4})/s';
 
-    const MAX_LENGTH_RANGE = [125, 2 ** 63 - 1];
-
     /**
+     * Peer read buffer.
+     *
      * @var string
      */
     protected $buffer = '';
@@ -30,68 +33,132 @@ class FrameReader {
     protected $client;
 
     /**
-     * @var array
+     * Frame header buffer.
+     *
+     * @var null|array
      */
-    protected $head = [];
+    protected $header;
 
     /**
-     * Payload size limit.
+     * Maximum inbound per-frame payload length (fragment).
      *
-     * Must fall within {@link MAX_LENGTH_RANGE} (inclusive).
+     * Must be greater than or equal to `125`
      *
-     * Defaults to 10 MiB.
+     * Defaults to 128 KiB.
      *
      * https://tools.ietf.org/html/rfc6455#section-5.2
-     * > ... interpreted as a 64-bit unsigned integer (the
-     * > most significant bit MUST be 0) ...
      *
      * @var int
      */
-    protected $maxLength = 10 * 1024 * 1024;
+    protected $maxLength = 128 * 1024;
 
+    /**
+     * RSV bit mask claimed by extensions.
+     *
+     * @var int
+     */
+    protected $rsv = 0;
+
+    /**
+     * @param WebSocketClient $client
+     */
     public function __construct (WebSocketClient $client) {
         $this->client = $client;
     }
 
     /**
+     * Reads and returns a single pending frame from the buffer, or nothing.
+     *
      * @return null|Frame
      * @throws WebSocketError
      */
     protected function getFrame (): ?Frame {
-        if (!$this->head) {
-            if (preg_match(self::REGEXP, $this->buffer, $head)) {
-                [, $op, $len] = unpack('C2', $head[0]);
-                $len = [0xfe => 'n', 0xff => 'J'][$len] ?? ($len & 0x7f);
-                $this->head = [
-                    'final' => $op & 0x80,
-                    'rsv' => $op & Frame::RSV123,
-                    'opCode' => $op & 0x0f,
-                    'length' => is_int($len) ? $len : unpack($len, $head[$len])[1],
-                    'mask' => array_values(unpack('C*', $head['mask'])),
-                ];
-                $this->buffer = substr($this->buffer, strlen($head[0]));
-                $this->validate();
-            }
-            elseif (strlen($this->buffer) >= 14) { // max head room
+        // wait for the header
+        if (!$this->header ??= $this->getFrame_header()) {
+            return null;
+        }
+
+        // wait for the whole frame
+        $length = $this->header['length'];
+        if (strlen($this->buffer) < $length) {
+            return null;
+        }
+
+        // extract the payload
+        $payload = substr($this->buffer, 0, $length);
+
+        // chop the buffer
+        $this->buffer = substr($this->buffer, $length);
+
+        // unmask the payload
+        $mask = $this->header['mask'];
+        for ($i = 0; $i < $length; $i++) {
+            $payload[$i] = chr(ord($payload[$i]) ^ $mask[$i % 4]);
+        }
+
+        // construct the frame instance
+        $frame = $this->newFrame($payload);
+
+        // destroy the header buffer
+        $this->header = null;
+
+        // return the frame
+        return $frame;
+    }
+
+    /**
+     * https://tools.ietf.org/html/rfc6455#section-5.2
+     * @return null|array
+     */
+    protected function getFrame_header (): ?array {
+        if (!preg_match(self::REGEXP, $this->buffer, $match)) {
+            if (strlen($this->buffer) >= 14) { // max head room
                 throw new WebSocketError(Frame::CLOSE_PROTOCOL_ERROR, 'Bad frame.');
             }
-            else {
-                return null;
+            return null;
+        }
+
+        // unpack the first two bytes
+        [, $b0, $b1] = unpack('C2', $match[0]); // 1-based indices
+
+        // convert the second byte into an unpack() format, or the actual length (sans the MASK bit).
+        // the unpack() format is also used as the length's named-group in the regexp match.
+        $len = [0xfe => 'n', 0xff => 'J'][$b1] ?? ($b1 & Frame::LEN);
+
+        // fill the header buffer
+        $header = [
+            'final' => $final = $b0 & Frame::FIN,
+            'rsv' => $rsv = $b0 & Frame::RSV123,
+            'opCode' => $opCode = $b0 & Frame::OP,
+            'length' => $length = is_int($len) ? $len : unpack($len, $match[$len])[1],
+            'mask' => array_values(unpack('C*', $match['mask'])),
+        ];
+
+        // chop the peer buffer
+        $this->buffer = substr($this->buffer, strlen($match[0]));
+
+        // validate
+        if ($badRsv = $rsv & ~$this->rsv) {
+            $badRsv = str_pad(base_convert($badRsv >> 4, 10, 2), 3, '0', STR_PAD_LEFT);
+            throw new WebSocketError(Frame::CLOSE_PROTOCOL_ERROR, "Received unknown RSV bits: 0b{$badRsv}");
+        }
+        elseif ($opCode >= Frame::OP_CLOSE) {
+            if ($opCode > Frame::OP_PONG) {
+                throw new WebSocketError(Frame::CLOSE_PROTOCOL_ERROR, "Received unsupported control frame ({$opCode})");
+            }
+            elseif (!$final) {
+                throw new WebSocketError(Frame::CLOSE_PROTOCOL_ERROR, "Received fragmented control frame ({$opCode})");
             }
         }
-        $length = $this->head['length'];
-        if (strlen($this->buffer) >= $length) {
-            $payload = substr($this->buffer, 0, $length);
-            $this->buffer = substr($this->buffer, $length);
-            $mask = $this->head['mask'];
-            for ($i = 0; $i < $length; $i++) {
-                $payload[$i] = chr(ord($payload[$i]) ^ $mask[$i % 4]);
-            }
-            $frame = new Frame($this->head['final'], $this->head['rsv'], $this->head['opCode'], $payload);
-            $this->head = [];
-            return $frame;
+        elseif ($opCode > Frame::OP_BINARY) {
+            throw new WebSocketError(Frame::CLOSE_PROTOCOL_ERROR, "Received unsupported data frame ({$opCode})");
         }
-        return null;
+        elseif ($length > $this->maxLength) {
+            throw new WebSocketError(Frame::CLOSE_TOO_LARGE, "Payload would exceed {$this->maxLength} bytes");
+        }
+
+        // return the header
+        return $header;
     }
 
     /**
@@ -100,7 +167,15 @@ class FrameReader {
      * @return Generator|Frame[]
      */
     public function getFrames () {
-        $this->buffer .= $this->client->recvAll();
+        // read into the buffer
+        $this->buffer .= $bytes = $this->client->recvAll();
+
+        // check for peer disconnection
+        if (!strlen($bytes)) {
+            $this->client->close();
+        }
+
+        // yield frames
         while ($frame = $this->getFrame()) {
             yield $frame;
         }
@@ -114,38 +189,37 @@ class FrameReader {
     }
 
     /**
+     * @return int
+     */
+    public function getRsv (): int {
+        return $this->rsv;
+    }
+
+    /**
+     * {@link Frame} factory.
+     *
+     * @param string $payload
+     * @return Frame
+     */
+    protected function newFrame (string $payload): Frame {
+        return new Frame($this->header['final'], $this->header['rsv'], $this->header['opCode'], $payload);
+    }
+
+    /**
      * @param int $bytes
      * @return $this
      */
     public function setMaxLength (int $bytes) {
-        if ($bytes < self::MAX_LENGTH_RANGE[0] or $bytes > self::MAX_LENGTH_RANGE[1]) {
-            throw new InvalidArgumentException('Max length must be within range [125,2^63-1]');
-        }
-        $this->maxLength = $bytes;
+        $this->maxLength = min(max(125, $bytes), 2 ** 63 - 1);
         return $this;
     }
 
     /**
-     * Validates the current head by not throwing.
-     *
-     * @throws WebSocketError
+     * @param int $rsv
+     * @return $this
      */
-    protected function validate (): void {
-        if ($this->head['length'] > $this->maxLength) {
-            throw new WebSocketError(Frame::CLOSE_TOO_LARGE, "Payload would exceed {$this->maxLength} bytes");
-        }
-        $opCode = $this->head['opCode'];
-        $name = Frame::NAMES[$opCode];
-        if ($opCode & 0x08) { // control
-            if ($opCode > Frame::OP_PONG) {
-                throw new WebSocketError(Frame::CLOSE_PROTOCOL_ERROR, "Received {$name}");
-            }
-            if (!$this->head['final']) {
-                throw new WebSocketError(Frame::CLOSE_PROTOCOL_ERROR, "Received fragmented {$name}");
-            }
-        }
-        elseif ($opCode > Frame::OP_BINARY) { // data
-            throw new WebSocketError(Frame::CLOSE_PROTOCOL_ERROR, "Received {$name}");
-        }
+    public function setRsv (int $rsv) {
+        $this->rsv = $rsv;
+        return $this;
     }
 }

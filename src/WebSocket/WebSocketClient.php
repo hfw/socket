@@ -34,12 +34,7 @@ class WebSocketClient extends StreamClient implements ReactiveInterface {
     protected $frameHandler;
 
     /**
-     * @var FrameReader
-     */
-    protected $frameReader;
-
-    /**
-     * @var HandShake
+     * @var Handshake
      */
     protected $handshake;
 
@@ -60,8 +55,7 @@ class WebSocketClient extends StreamClient implements ReactiveInterface {
     public function __construct ($resource, WebSocketServer $server) {
         parent::__construct($resource);
         $this->server = $server;
-        $this->handshake = new HandShake($this);
-        $this->frameReader = new FrameReader($this);
+        $this->handshake = new Handshake($this);
         $this->frameHandler = new FrameHandler($this);
     }
 
@@ -105,9 +99,9 @@ class WebSocketClient extends StreamClient implements ReactiveInterface {
     }
 
     /**
-     * @return HandShake
+     * @return Handshake
      */
-    public function getHandshake (): HandShake {
+    public function getHandshake (): Handshake {
         return $this->handshake;
     }
 
@@ -123,6 +117,10 @@ class WebSocketClient extends StreamClient implements ReactiveInterface {
      */
     public function getState (): int {
         return $this->state;
+    }
+
+    final public function isNegotiating (): bool {
+        return $this->state === self::STATE_HANDSHAKE;
     }
 
     /**
@@ -196,25 +194,15 @@ class WebSocketClient extends StreamClient implements ReactiveInterface {
      * @throws Throwable
      */
     public function onReadable (): void {
-        if (!strlen($this->recv(1, MSG_PEEK))) { // peer has shut down writing, or closed.
-            $this->close();
-            return;
-        }
         try {
-            switch ($this->state) {
-                case self::STATE_HANDSHAKE:
-                    if ($this->handshake->negotiate()) {
-                        $this->state = self::STATE_OK;
-                        $this->onStateOk();
-                    }
-                    return;
-                case self::STATE_OK:
-                    foreach ($this->frameReader->getFrames() as $frame) {
-                        $this->frameHandler->onFrame($frame);
-                    }
-                    return;
-                case self::STATE_CLOSED:
-                    return;
+            if ($this->isNegotiating()) {
+                if ($this->handshake->onReadable()) {
+                    $this->state = self::STATE_OK;
+                    $this->onStateOk();
+                }
+            }
+            elseif ($this->isOk()) {
+                $this->frameHandler->onReadable();
             }
         }
         catch (WebSocketError $e) {
@@ -231,6 +219,9 @@ class WebSocketClient extends StreamClient implements ReactiveInterface {
      * Called when the initial connection handshake succeeds and frame I/O can occur.
      *
      * Does nothing by default.
+     *
+     * If you have negotiated an extension during {@link Handshake},
+     * claim the RSV bits here via {@link FrameReader::setRsv()}
      */
     protected function onStateOk (): void {
         // stub

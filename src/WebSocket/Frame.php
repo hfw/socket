@@ -10,20 +10,22 @@ namespace Helix\Socket\WebSocket;
  */
 class Frame {
 
+    const FIN = 0x80;
     const RSV123 = 0x70;
     const RSV1 = 0x40;
     const RSV2 = 0x20;
     const RSV3 = 0x10;
-
-    const OP_CONTINUE = 0x00;
+    const OP = 0x0f;
+    const OP_CONTINUATION = 0x00;
     const OP_TEXT = 0x01;
     const OP_BINARY = 0x02;
     const OP_CLOSE = 0x08;
     const OP_PING = 0x09;
     const OP_PONG = 0x0a;
+    const LEN = 0x7f;
 
     const NAMES = [
-        self::OP_CONTINUE => 'CONTINUE',
+        self::OP_CONTINUATION => 'CONTINUATION',
         self::OP_TEXT => 'TEXT',
         self::OP_BINARY => 'BINARY',
         0x03 => 'RESERVED DATA 0x03',
@@ -194,8 +196,8 @@ class Frame {
     /**
      * @return bool
      */
-    final public function isContinue (): bool {
-        return $this->opCode === self::OP_CONTINUE;
+    final public function isContinuation (): bool {
+        return $this->opCode === self::OP_CONTINUATION;
     }
 
     /**

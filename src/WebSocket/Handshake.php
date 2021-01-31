@@ -2,10 +2,14 @@
 
 namespace Helix\Socket\WebSocket;
 
+use Throwable;
+
 /**
- * WebSocket handshake.
+ * Initial WebSocket connection handshake.
+ *
+ * https://tools.ietf.org/html/rfc6455#section-1.3
  */
-class HandShake {
+class Handshake {
 
     const RFC_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 
@@ -25,25 +29,16 @@ class HandShake {
     protected $headers = [];
 
     /**
-     * @var string
-     */
-    protected $method;
-
-    /**
-     * Claimed RSV bit mask.
-     *
-     * @var int
-     */
-    protected $rsv = 0;
-
-    /**
-     * Received handshake size limit.
-     *
      * The connection is closed (HTTP 413) if the received headers exceed this many bytes.
      *
      * @var int
      */
-    protected $sizeLimit = 4096;
+    protected $maxLength = 4096;
+
+    /**
+     * @var string
+     */
+    protected $method;
 
     /**
      * @param WebSocketClient $client
@@ -67,27 +62,33 @@ class HandShake {
     }
 
     /**
-     * @return int
-     */
-    public function getRsv (): int {
-        return $this->rsv;
-    }
-
-    /**
      * Negotiates the initial connection.
      *
      * @return bool
      * @throws WebSocketError
+     * @throws Throwable
      */
-    public function negotiate (): bool {
-        $this->buffer .= $this->client->recvAll();
+    public function onReadable (): bool {
+        // read into the buffer
+        $this->buffer .= $bytes = $this->client->recvAll();
+
+        // check for peer disconnection
+        if (!strlen($bytes)) {
+            $this->client->close();
+            return false;
+        }
+
+        // read frames from the buffer and yield
         try {
-            if (strlen($this->buffer) > $this->sizeLimit) {
+            // length check
+            if (strlen($this->buffer) > $this->maxLength) {
                 throw new WebSocketError(413, "{$this->client} exceeded the maximum handshake size.");
             }
+            // still reading?
             if (false === $end = strpos($this->buffer, "\r\n\r\n")) {
                 return false;
             }
+            // parse the headers
             $head = explode("\r\n", substr($this->buffer, 0, $end));
             $this->method = array_shift($head);
             foreach ($head as $header) {
@@ -105,27 +106,36 @@ class HandShake {
                     $this->headers[$key] = $value;
                 }
             }
-            $this->buffer = '';
+            $this->buffer = ''; // wipe the buffer
             $this->validate();
-            $this->upgrade();
-            $this->client->write("\r\n\r\n");
-            return true;
         }
-        catch (WebSocketError $e) {
-            $this->client->write("HTTP/1.1 {$e->getCode()}\r\n\r\n");
+        catch (WebSocketError $e) { // catch and respond with HTTP error and rethrow
+            $this->client->write("HTTP/1.1 {$e->getCode()} WebSocket Handshake Failure\r\n\r\n");
             throw $e;
         }
+        catch (Throwable $e) { // catch everything else and respond with HTTP 500 and rethrow
+            $this->client->write("HTTP/1.1 500 WebSocket Internal Error\r\n\r\n");
+            throw $e;
+        }
+
+        // send upgrade headers
+        $this->upgrade();
+        $this->client->write("\r\n\r\n");
+
+        // success
+        return true;
     }
 
     /**
      * Sends the connection upgrade headers.
      */
     protected function upgrade (): void {
+        $key = base64_encode(sha1($this->headers['sec-websocket-key'] . self::RFC_GUID, true));
         $this->client->write(implode("\r\n", [
             "HTTP/1.1 101 Switching Protocols",
             "Connection: Upgrade",
             "Upgrade: websocket",
-            "Sec-WebSocket-Accept: " . base64_encode(sha1($this->headers['sec-websocket-key'] . self::RFC_GUID, true)),
+            "Sec-WebSocket-Accept: {$key}"
         ]));
     }
 
