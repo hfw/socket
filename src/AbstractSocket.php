@@ -121,16 +121,16 @@ abstract class AbstractSocket implements SocketInterface {
     }
 
     /**
-     * Closes the underlying resource.
-     *
-     * This should not be called more than once.
+     * Closes the underlying resource if it's open.
      *
      * @see https://php.net/socket_close
      *
      * @return $this
      */
     public function close () {
-        socket_close($this->resource);
+        if ($this->isOpen()) {
+            socket_close($this->resource);
+        }
         return $this;
     }
 
