@@ -76,19 +76,31 @@ class Reactor implements Countable {
     }
 
     /**
+     * Whether a socket is in the reactor.
+     *
+     * @param ReactiveInterface $socket
+     * @return bool
+     */
+    public function has (ReactiveInterface $socket): bool {
+        return isset($sockets[$socket->getId()]);
+    }
+
+    /**
      * @param int $channel
      * @param ReactiveInterface $socket
      * @param Throwable $error
      */
     public function onError (int $channel, $socket, Throwable $error): void {
         unset($channel);
-        if ($socket instanceof WebSocketClient and $error instanceof WebSocketError) {
-            $socket->close($error->getCode(), $error->getMessage());
+        echo "{$error}\n\n";
+        if ($socket->isOpen()) {
+            if ($socket instanceof WebSocketClient and $error instanceof WebSocketError) {
+                $socket->close($error->getCode(), $error->getMessage());
+            }
+            else {
+                $socket->close();
+            }
         }
-        else {
-            $socket->close();
-        }
-        echo $error;
     }
 
     /**
@@ -111,10 +123,11 @@ class Reactor implements Countable {
                     $socket->{$method}();
                 }
                 catch (Throwable $error) {
+                    unset($rwe[0][$id]); // prevent onReadable() if this is an OOB error.
                     $this->onError($channel, $socket, $error);
                 }
                 finally {
-                    if (!$socket->isOpen()) {
+                    if (!$socket->isOpen() and $this->has($socket)) {
                         $this->remove($socket);
                     }
                 }
