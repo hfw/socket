@@ -250,7 +250,7 @@ class WebSocketClient extends StreamClient implements ReactiveInterface {
      * @throws JsonException
      */
     public function writeJSON ($data): void {
-        $this->frameHandler->writeText(json_encode($data, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
+        $this->frameHandler->writeText(json_encode($data, JSON_THROW_ON_ERROR));
     }
 
     /**
