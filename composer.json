@@ -12,7 +12,8 @@
   "require": {
     "php": "~7.4",
     "ext-sockets": "*",
-    "ext-mbstring": "*"
+    "ext-mbstring": "*",
+    "ext-json": "*"
   },
   "autoload": {
     "psr-4": {

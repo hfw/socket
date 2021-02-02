@@ -4,6 +4,7 @@ namespace Helix\Socket\WebSocket;
 
 use Helix\Socket\ReactiveInterface;
 use Helix\Socket\StreamClient;
+use JsonException;
 use Throwable;
 
 /**
@@ -240,6 +241,16 @@ class WebSocketClient extends StreamClient implements ReactiveInterface {
      */
     public function writeBinary (string $binary): void {
         $this->frameHandler->writeBinary($binary);
+    }
+
+    /**
+     * JSON-encodes and sends as `TEXT`.
+     *
+     * @param mixed $data
+     * @throws JsonException
+     */
+    public function writeJSON ($data): void {
+        $this->frameHandler->writeText(json_encode($data, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
     }
 
     /**
