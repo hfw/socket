@@ -92,12 +92,12 @@ class Reactor implements Countable {
      */
     public function onError (int $channel, $socket, Throwable $error): void {
         unset($channel);
-        echo "{$error}\n\n";
         if ($socket->isOpen()) {
             if ($socket instanceof WebSocketClient and $error instanceof WebSocketError) {
                 $socket->close($error->getCode(), $error->getMessage());
             }
             else {
+                echo "{$error}\n\n";
                 $socket->close();
             }
         }
