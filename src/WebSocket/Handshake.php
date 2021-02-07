@@ -24,7 +24,9 @@ class Handshake {
     protected $client;
 
     /**
-     * @var string[]
+     * [ header name => lowercase value  => actual value ]
+     *
+     * @var string[][]
      */
     protected $headers = [];
 
@@ -48,7 +50,7 @@ class Handshake {
     }
 
     /**
-     * @return string[]
+     * @return string[][]
      */
     public function getHeaders () {
         return $this->headers;
@@ -98,12 +100,9 @@ class Handshake {
                 }
                 [$key, $value] = $header;
                 $key = strtolower(trim($key));
-                $value = trim($value);
-                if (isset($this->headers[$key])) {
-                    $this->headers[$key] .= ', ' . $value;
-                }
-                else {
-                    $this->headers[$key] = $value;
+                foreach (explode(', ', $value) as $value) {
+                    $value = trim($value);
+                    $this->headers[$key][strtolower($value)] = $value;
                 }
             }
             $this->buffer = ''; // wipe the buffer
@@ -130,7 +129,7 @@ class Handshake {
      * Sends the connection upgrade headers.
      */
     protected function upgrade (): void {
-        $key = base64_encode(sha1($this->headers['sec-websocket-key'] . self::RFC_GUID, true));
+        $key = base64_encode(sha1(current($this->headers['sec-websocket-key']) . self::RFC_GUID, true));
         $this->client->write(implode("\r\n", [
             "HTTP/1.1 101 Switching Protocols",
             "Connection: Upgrade",
@@ -149,13 +148,13 @@ class Handshake {
             $check = 'method = http 1.1'
             and preg_match('/HTTP\/1\.1$/i', $this->method)
             and $check = 'connection = upgrade'
-            and preg_match('/^upgrade$/i', $this->headers['connection'] ?? '')
+            and isset($this->headers['connection']['upgrade'])
             and $check = 'upgrade = websocket'
-            and preg_match('/^websocket$/i', $this->headers['upgrade'] ?? '')
+            and isset($this->headers['upgrade']['websocket'])
             and $check = 'version = 13'
-            and ($this->headers['sec-websocket-version'] ?? '') === '13'
+            and isset($this->headers['sec-websocket-version']['13'])
             and $check = 'key length = 16'
-            and strlen(base64_decode($this->headers['sec-websocket-key'] ?? '')) === 16
+            and strlen(base64_decode(current($this->headers['sec-websocket-key']) ?? '')) === 16
         )) {
             throw new WebSocketError(400, "Handshake with {$this->client} failed on validation: {$check}");
         }
