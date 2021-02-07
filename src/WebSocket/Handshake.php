@@ -154,7 +154,7 @@ class Handshake {
             and $check = 'version = 13'
             and isset($this->headers['sec-websocket-version']['13'])
             and $check = 'key length = 16'
-            and strlen(base64_decode(current($this->headers['sec-websocket-key']) ?? '')) === 16
+            and strlen(base64_decode(current($this->headers['sec-websocket-key'] ?? []))) === 16
         )) {
             throw new WebSocketError(400, "Handshake with {$this->client} failed on validation: {$check}");
         }
