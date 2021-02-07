@@ -90,7 +90,7 @@ class Reactor implements Countable {
      * @param ReactiveInterface $socket
      * @param Throwable $error
      */
-    public function onError (int $channel, $socket, Throwable $error): void {
+    protected function onError (int $channel, $socket, Throwable $error): void {
         unset($channel);
         if ($socket instanceof WebSocketClient and $error instanceof WebSocketError) {
             if ($socket->isOpen()) {
