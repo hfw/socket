@@ -11,6 +11,7 @@ error_reporting(E_ALL);
 
 require_once __DIR__ . '/../vendor/autoload.php';
 
+use Helix\Socket\ReactiveInterface;
 use Helix\Socket\Reactor;
 use Helix\Socket\WebSocket\Frame;
 use Helix\Socket\WebSocket\FrameHandler;
@@ -143,7 +144,21 @@ class FrameDebugHandler extends FrameHandler {
     }
 }
 
-$reactor = new Reactor();
+class ChatReactor extends Reactor {
+
+    /**
+     * @param int $channel
+     * @param ReactiveInterface $socket
+     * @param Throwable $error
+     */
+    protected function onError (int $channel, $socket, Throwable $error): void {
+        echo "{$error}\n\n";
+        parent::onError($channel, $socket, $error);
+    }
+}
+
+$reactor = new ChatReactor();
+
 $server = ChatServer::create(AF_INET, $reactor)
     ->setOption(SO_REUSEADDR, 1)
     ->bind('127.0.0.1', 44444)
