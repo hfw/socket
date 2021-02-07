@@ -98,7 +98,6 @@ class Reactor implements Countable {
             }
         }
         else {
-            echo "{$error}\n\n";
             if ($socket->isOpen()) {
                 $socket->close();
             }
